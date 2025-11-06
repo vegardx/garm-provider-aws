@@ -242,3 +242,56 @@ func TestNewConfig(t *testing.T) {
 		require.Error(t, err, "NewConfig() expected an error, got none")
 	})
 }
+
+func TestAssumeRoleCredentialsValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		creds   AssumeRoleCredentials
+		wantErr bool
+	}{
+		{
+			name: "valid role ARN",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws:iam::123456789012:role/TestRole",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid role ARN with optional fields",
+			creds: AssumeRoleCredentials{
+				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
+				RoleSessionName: "test-session",
+				ExternalID:      "external-id-123",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "missing role ARN",
+			creds:   AssumeRoleCredentials{},
+			wantErr: true,
+		},
+		{
+			name: "invalid role ARN format",
+			creds: AssumeRoleCredentials{
+				RoleARN: "invalid-arn",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid role ARN prefix",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws:s3::123456789012:bucket/test",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.creds.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
