@@ -244,6 +244,10 @@ func TestNewConfig(t *testing.T) {
 }
 
 func TestAssumeRoleCredentialsValidate(t *testing.T) {
+	duration3600 := int32(3600)
+	duration800 := int32(800)
+	duration50000 := int32(50000)
+	
 	tests := []struct {
 		name    string
 		creds   AssumeRoleCredentials
@@ -262,6 +266,21 @@ func TestAssumeRoleCredentialsValidate(t *testing.T) {
 				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
 				RoleSessionName: "test-session",
 				ExternalID:      "external-id-123",
+				DurationSeconds: &duration3600,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid China region ARN",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws-cn:iam::123456789012:role/TestRole",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid GovCloud ARN",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws-us-gov:iam::123456789012:role/TestRole",
 			},
 			wantErr: false,
 		},
@@ -271,16 +290,32 @@ func TestAssumeRoleCredentialsValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "invalid role ARN format",
+			name: "invalid role ARN format - no arn prefix",
 			creds: AssumeRoleCredentials{
 				RoleARN: "invalid-arn",
 			},
 			wantErr: true,
 		},
 		{
-			name: "invalid role ARN prefix",
+			name: "invalid role ARN format - not IAM",
 			creds: AssumeRoleCredentials{
 				RoleARN: "arn:aws:s3::123456789012:bucket/test",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid duration too short",
+			creds: AssumeRoleCredentials{
+				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
+				DurationSeconds: &duration800,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid duration too long",
+			creds: AssumeRoleCredentials{
+				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
+				DurationSeconds: &duration50000,
 			},
 			wantErr: true,
 		},

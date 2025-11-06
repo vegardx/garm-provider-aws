@@ -111,8 +111,15 @@ func (c AssumeRoleCredentials) Validate() error {
 	if c.RoleARN == "" {
 		return fmt.Errorf("missing role_arn")
 	}
-	if !strings.HasPrefix(c.RoleARN, "arn:aws:iam::") {
-		return fmt.Errorf("invalid role_arn format")
+	// Validate ARN format - support different AWS partitions (aws, aws-cn, aws-us-gov)
+	if !strings.HasPrefix(c.RoleARN, "arn:aws") || !strings.Contains(c.RoleARN, ":iam::") {
+		return fmt.Errorf("invalid role_arn format: must be a valid IAM role ARN")
+	}
+	// Validate DurationSeconds if provided (AWS STS requirement: 900-43200 seconds)
+	if c.DurationSeconds != nil {
+		if *c.DurationSeconds < 900 || *c.DurationSeconds > 43200 {
+			return fmt.Errorf("invalid duration_seconds: must be between 900 and 43200 seconds")
+		}
 	}
 	return nil
 }
