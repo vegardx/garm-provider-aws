@@ -18,18 +18,23 @@ package config
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 type AWSCredentialType string
 
 const (
-	AWSCredentialTypeStatic AWSCredentialType = "static"
-	AWSCredentialTypeRole   AWSCredentialType = "role"
+	AWSCredentialTypeStatic     AWSCredentialType = "static"
+	AWSCredentialTypeRole       AWSCredentialType = "role"
+	AWSCredentialTypeAssumeRole AWSCredentialType = "assume_role"
 )
 
 // NewConfig returns a new Config
@@ -88,9 +93,41 @@ func (c StaticCredentials) Validate() error {
 	return nil
 }
 
+type AssumeRoleCredentials struct {
+	// ARN of the role to assume
+	RoleARN string `toml:"role_arn"`
+
+	// Optional session name for CloudTrail auditing
+	RoleSessionName string `toml:"role_session_name,omitempty"`
+
+	// Optional external ID for third-party access
+	ExternalID string `toml:"external_id,omitempty"`
+
+	// Optional session duration (900-43200 seconds)
+	DurationSeconds *int32 `toml:"duration_seconds,omitempty"`
+}
+
+func (c AssumeRoleCredentials) Validate() error {
+	if c.RoleARN == "" {
+		return fmt.Errorf("missing role_arn")
+	}
+	// Validate ARN format - support different AWS partitions (aws, aws-cn, aws-us-gov)
+	if !strings.HasPrefix(c.RoleARN, "arn:aws") || !strings.Contains(c.RoleARN, ":iam::") {
+		return fmt.Errorf("invalid role_arn format: must be a valid IAM role ARN")
+	}
+	// Validate DurationSeconds if provided (AWS STS requirement: 900-43200 seconds)
+	if c.DurationSeconds != nil {
+		if *c.DurationSeconds < 900 || *c.DurationSeconds > 43200 {
+			return fmt.Errorf("invalid duration_seconds: must be between 900 and 43200 seconds")
+		}
+	}
+	return nil
+}
+
 type Credentials struct {
-	CredentialType    AWSCredentialType `toml:"credential_type"`
-	StaticCredentials StaticCredentials `toml:"static"`
+	CredentialType        AWSCredentialType     `toml:"credential_type"`
+	StaticCredentials     StaticCredentials     `toml:"static"`
+	AssumeRoleCredentials AssumeRoleCredentials `toml:"assume_role"`
 }
 
 func (c Credentials) Validate() error {
@@ -98,12 +135,14 @@ func (c Credentials) Validate() error {
 	case AWSCredentialTypeStatic:
 		return c.StaticCredentials.Validate()
 	case AWSCredentialTypeRole:
+		return nil
+	case AWSCredentialTypeAssumeRole:
+		return c.AssumeRoleCredentials.Validate()
 	case "":
 		return fmt.Errorf("missing credential_type")
 	default:
 		return fmt.Errorf("unknown credential type: %s", c.CredentialType)
 	}
-	return nil
 }
 
 func (c Config) GetAWSConfig(ctx context.Context) (aws.Config, error) {
@@ -125,6 +164,41 @@ func (c Config) GetAWSConfig(ctx context.Context) (aws.Config, error) {
 		)
 	case AWSCredentialTypeRole:
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
+	case AWSCredentialTypeAssumeRole:
+		// Load base config first
+		var baseCfg aws.Config
+		baseCfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
+		if err != nil {
+			return aws.Config{}, fmt.Errorf("failed to load base config: %w", err)
+		}
+
+		// Create STS client from base config
+		stsClient := sts.NewFromConfig(baseCfg)
+
+		// Build assume role options
+		assumeRoleOptions := func(o *stscreds.AssumeRoleOptions) {
+			if c.Credentials.AssumeRoleCredentials.RoleSessionName != "" {
+				o.RoleSessionName = c.Credentials.AssumeRoleCredentials.RoleSessionName
+			}
+			if c.Credentials.AssumeRoleCredentials.ExternalID != "" {
+				o.ExternalID = aws.String(c.Credentials.AssumeRoleCredentials.ExternalID)
+			}
+			if c.Credentials.AssumeRoleCredentials.DurationSeconds != nil {
+				o.Duration = time.Duration(*c.Credentials.AssumeRoleCredentials.DurationSeconds) * time.Second
+			}
+		}
+
+		// Create credentials provider with assume role
+		cfg, err = config.LoadDefaultConfig(ctx,
+			config.WithRegion(c.Region),
+			config.WithCredentialsProvider(
+				stscreds.NewAssumeRoleProvider(
+					stsClient,
+					c.Credentials.AssumeRoleCredentials.RoleARN,
+					assumeRoleOptions,
+				),
+			),
+		)
 	default:
 		return aws.Config{}, fmt.Errorf("unknown credential type: %s", c.Credentials.CredentialType)
 	}

@@ -21,23 +21,62 @@ Copy the binary on the same system where garm is running, and [point to it in th
 
 ## Configure
 
-The config file for this external provider is a simple toml used to configure the AWS credentials it needs to spin up virtual machines.
+The config file for this external provider is a simple toml used to configure the AWS credentials it needs to spin up virtual machines. The provider supports three credential types:
 
-```bash
+### Static Credentials
+
+Use static AWS access keys for authentication:
+
+```toml
 region = "eu-central-1"
 subnet_id = "sample_subnet_id"
 
 [credentials]
-    # Allowed values are: static, role
-    # When using IAM roles, you can omit the [credentials.static] section
     credential_type = "static"
     [credentials.static]
     access_key_id = "sample_access_key_id"
     secret_access_key = "sample_secret_access_key"
-    session_token = "sample_session_token"
+    session_token = "sample_session_token"  # Optional
 ```
 
-If you're running GARM on eks, you can use the IAM role assigned to the eks nodes by setting `credential_type` to `role`. In order for this to work, the environment variables prefixed with `AWS_` need to be visible by the provider. By default, GARM does not pass through any environment variables to the external providers. It only sets the needed variables that controls the operations of the provider itself. To pass through variables, you will need to set the `environment_variables` option in the provider configuration. For example:
+### IAM Role (Instance Profile)
+
+When running GARM on AWS (e.g., on EKS), you can use the IAM role assigned to the instance:
+
+```toml
+region = "eu-central-1"
+subnet_id = "sample_subnet_id"
+
+[credentials]
+    credential_type = "role"
+```
+
+### Assume Role
+
+Use AWS STS AssumeRole to assume a different IAM role. This is useful for cross-account access or when you need to assume a role with specific permissions:
+
+```toml
+region = "eu-central-1"
+subnet_id = "sample_subnet_id"
+
+[credentials]
+    credential_type = "assume_role"
+    [credentials.assume_role]
+    role_arn = "arn:aws:iam::123456789012:role/GarmRunnerRole"
+    role_session_name = "garm-session"  # Optional: for CloudTrail auditing
+    external_id = "unique-external-id"   # Optional: for third-party access
+    duration_seconds = 3600              # Optional: session duration (900-43200)
+```
+
+**Note:** When using `assume_role`, the provider automatically obtains base credentials from the AWS credential chain, which includes:
+- Instance Metadata Service (IMDS) when running on EC2/EKS
+- Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, etc.)
+- Shared credentials file (~/.aws/credentials)
+- IAM roles for EKS service accounts
+
+These base credentials are then used to assume the specified role via AWS STS.
+
+If you're running GARM on EKS and using the `role` or `assume_role` credential types, the environment variables prefixed with `AWS_` need to be visible by the provider. By default, GARM does not pass through any environment variables to the external providers. It only sets the needed variables that controls the operations of the provider itself. To pass through variables, you will need to set the `environment_variables` option in the provider configuration. For example:
 
 ```toml
 [[provider]]

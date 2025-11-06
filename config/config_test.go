@@ -242,3 +242,91 @@ func TestNewConfig(t *testing.T) {
 		require.Error(t, err, "NewConfig() expected an error, got none")
 	})
 }
+
+func TestAssumeRoleCredentialsValidate(t *testing.T) {
+	duration3600 := int32(3600)
+	duration800 := int32(800)
+	duration50000 := int32(50000)
+	
+	tests := []struct {
+		name    string
+		creds   AssumeRoleCredentials
+		wantErr bool
+	}{
+		{
+			name: "valid role ARN",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws:iam::123456789012:role/TestRole",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid role ARN with optional fields",
+			creds: AssumeRoleCredentials{
+				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
+				RoleSessionName: "test-session",
+				ExternalID:      "external-id-123",
+				DurationSeconds: &duration3600,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid China region ARN",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws-cn:iam::123456789012:role/TestRole",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid GovCloud ARN",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws-us-gov:iam::123456789012:role/TestRole",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "missing role ARN",
+			creds:   AssumeRoleCredentials{},
+			wantErr: true,
+		},
+		{
+			name: "invalid role ARN format - no arn prefix",
+			creds: AssumeRoleCredentials{
+				RoleARN: "invalid-arn",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid role ARN format - not IAM",
+			creds: AssumeRoleCredentials{
+				RoleARN: "arn:aws:s3::123456789012:bucket/test",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid duration too short",
+			creds: AssumeRoleCredentials{
+				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
+				DurationSeconds: &duration800,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid duration too long",
+			creds: AssumeRoleCredentials{
+				RoleARN:         "arn:aws:iam::123456789012:role/TestRole",
+				DurationSeconds: &duration50000,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.creds.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
