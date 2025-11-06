@@ -68,6 +68,14 @@ subnet_id = "sample_subnet_id"
     duration_seconds = 3600              # Optional: session duration (900-43200)
 ```
 
+**Note:** When using `assume_role`, the provider automatically obtains base credentials from the AWS credential chain, which includes:
+- Instance Metadata Service (IMDS) when running on EC2/EKS
+- Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, etc.)
+- Shared credentials file (~/.aws/credentials)
+- IAM roles for EKS service accounts
+
+These base credentials are then used to assume the specified role via AWS STS.
+
 If you're running GARM on EKS and using the `role` or `assume_role` credential types, the environment variables prefixed with `AWS_` need to be visible by the provider. By default, GARM does not pass through any environment variables to the external providers. It only sets the needed variables that controls the operations of the provider itself. To pass through variables, you will need to set the `environment_variables` option in the provider configuration. For example:
 
 ```toml

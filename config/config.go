@@ -159,7 +159,8 @@ func (c Config) GetAWSConfig(ctx context.Context) (aws.Config, error) {
 		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
 	case AWSCredentialTypeAssumeRole:
 		// Load base config first
-		baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
+		var baseCfg aws.Config
+		baseCfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
 		if err != nil {
 			return aws.Config{}, fmt.Errorf("failed to load base config: %w", err)
 		}
